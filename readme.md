@@ -16,3 +16,7 @@ Paste the output of the 'ifconfig' command from your current device and click th
 
 Paste the output of the 'route -n' command from your current device and click the 'Generate Routes' button.
 
+
+##  Disclaimer
+
+You may use this utility at your own risk & responsibility. The author is not responsible to any possible damages that may occur after using the utility.
