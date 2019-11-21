@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<meta http-equiv='Content-Type' content='text/html' />
+	<meta name="description" content="This utility will generate the network settings & route addition commands (for GAiA OS) from your current configuration." />
+	<meta name="keywords" content="Check Point, GAiA, Generator, Network, Routes, Upgrade" />
+	<meta name="copyright" content="Elad Ben-Matityahu" />
+	<meta name="author" content="Elad Ben-Matityahu" />
+	<meta name="rating" content="General" />
+	<meta name="webmaster" content="General" />
+	<title>Check Point GAiA Script Generator</title>
+	<script type="text/javascript">
+		var masks = [ { 'cidr': 0, 'mask': '0.0.0.0' }, { 'cidr': 1, 'mask': '128.0.0.0' }, { 'cidr': 2, 'mask': '192.0.0.0' }, { 'cidr': 3, 'mask': '224.0.0.0' }, { 'cidr': 4, 'mask': '240.0.0.0' }, { 'cidr': 5, 'mask': '248.0.0.0' }, { 'cidr': 6, 'mask': '252.0.0.0' }, { 'cidr': 7, 'mask': '254.0.0.0' }, { 'cidr': 8, 'mask': '255.0.0.0' }, { 'cidr': 9, 'mask': '255.128.0.0' }, { 'cidr': 10, 'mask': '255.192.0.0' }, { 'cidr': 11, 'mask': '255.224.0.0' }, { 'cidr': 12, 'mask': '255.240.0.0' }, { 'cidr': 13, 'mask': '255.248.0.0' }, { 'cidr': 14, 'mask': '255.252.0.0' }, { 'cidr': 15, 'mask': '255.254.0.0' }, { 'cidr': 16, 'mask': '255.255.0.0' }, { 'cidr': 17, 'mask': '255.255.128.0' }, { 'cidr': 18, 'mask': '255.255.192.0' }, { 'cidr': 19, 'mask': '255.255.224.0' }, { 'cidr': 20, 'mask': '255.255.240.0' }, { 'cidr': 21, 'mask': '255.255.248.0' }, { 'cidr': 22, 'mask': '255.255.252.0' }, { 'cidr': 23, 'mask': '255.255.254.0' }, { 'cidr': 24, 'mask': '255.255.255.0' }, { 'cidr': 25, 'mask': '255.255.255.128' }, { 'cidr': 26, 'mask': '255.255.255.192' }, { 'cidr': 27, 'mask': '255.255.255.224' }, { 'cidr': 28, 'mask': '255.255.255.240' }, { 'cidr': 29, 'mask': '255.255.255.248' }, { 'cidr': 30, 'mask': '255.255.255.252' }, { 'cidr': 31, 'mask': '255.255.255.254' }, { 'cidr': 32, 'mask': '255.255.255.255' } ];		
+		function getCIDR(mask) {
+			var cidr = 0;
+			masks.forEach(function(item) { if (item.mask.trim() == mask.trim()) cidr = item.cidr; });
+			return cidr;
+		}
+		
+		function generateNetworkSettings() {
+			var outputText = '';
+			var text = document.getElementById('txt-content').value;
+			if (text.indexOf('HWaddr') === -1) outputText = 'It looks like you\'ve pasted an \'route -n\' output.\r\nAre you sure you\'ve clicked the right button?';
+			else {
+				if (text.split('\n')[0].indexOf('HWaddr') === -1) text = text.replace(text.split('\n')[0] + '\n', ''); // Chopping the 'ifconfig' command line for idiot-proofing the utility.
+				var interfacesText = text.split('\n\n');
+				var vlanInterfaces = [], physicalInterfaces = [], commands = [];
+				interfacesText.forEach(function(iface) { 
+					if (iface.trim() != '' && iface.indexOf('inet addr:127.0.0.') === -1) {
+						ifaceName = iface.split(' ')[0];
+						if (ifaceName.indexOf('.') !== -1) vlanInterfaces.push(ifaceName);
+						else physicalInterfaces.push(ifaceName);
+						
+						if (iface.indexOf('inet addr:') !== -1) {
+							var address = iface.split('inet addr:')[1]; address = address.split(' ')[0];
+							var mask = iface.split('Mask:')[1]; mask = getCIDR(mask.split(' ')[0]);
+							commands.push('set interface ' + ifaceName + ' ipv4-address ' + address + ' mask-length ' + mask);
+						}
+					}
+				});
+				physicalInterfaces.forEach(function(iface) { outputText += 'set interface ' + iface + ' state on\r\n'; });
+				outputText += '\r\n';
+				vlanInterfaces.forEach(function(iface) { outputText += 'add interface ' + iface.split('.')[0] + ' vlan ' + iface.split('.')[1] + '\r\n'; });
+				outputText += '\r\n';
+				commands.forEach(function(cmd) { outputText += cmd + '\r\n'; });
+				outputText += '\r\nsave config';
+			}
+			document.getElementById('txt-output').value = outputText;
+		}
+		
+		function generateRoutes() {
+			var outputText = '';
+			var text = document.getElementById('txt-content').value;
+			if (text.indexOf('HWaddr') !== -1) outputText = 'It looks like you\'ve pasted an \'ifconfig\' output.\r\nAre you sure you\'ve clicked the right button?';
+			else {
+				var routesText = text.split('\n');
+				routesText.forEach(function(routeRow) { 
+					if ((routeRow.indexOf('routing') === -1) && (routeRow.indexOf('Destination') === -1)) {
+						var parts = routeRow.split(' ');
+						parts = parts.filter(function (el) { return el != ''; });
+						if (parts.length == 8) {
+							if (parts[0] == '0.0.0.0') {
+								outputText += 'set static-route default nexthop gateway address ' + parts[1] + ' on\r\n';
+							} else if (parts[1] != '0.0.0.0' && parts.length > 0) {
+								outputText += 'set static-route ' + parts[0] + '/' + getCIDR(parts[2]) + ' nexthop gateway address ' + parts[1] + ' on\r\n';
+							}
+						}
+					}
+				});
+				outputText += '\r\nsave config';
+			}
+			document.getElementById('txt-output').value = outputText;
+		}
+		
+		function contentFocus() { if (document.getElementById('txt-content').value == 'Paste your input here...') document.getElementById('txt-content').value = ''; }
+		function contentFocusOut() { if (document.getElementById('txt-content').value == '') document.getElementById('txt-content').value = 'Paste your input here...'; }
+	</script>
+	<style type="text/css">
+		h1{ text-align: center; font-family: 'Courier New'; }
+		.tbl-split { width: 95%; margin: auto; }
+		.tbl-split td { text-align: center; }
+		.tbl-split td textarea { width: 95%; height: 500px; font-family: 'Courier New'; font-size: 8pt; }
+		button { font-family: 'Courier New'; font-size: 8pt; height: 18px; width: 200px; }
+		.centered { margin: auto; text-align: center; }
+		p, ul { width: 900px; font-family: 'Courier New'; font-size: 9pt; margin: auto; }
+		span { font-family: 'Courier New'; font-size: 8pt; }
+	</style>
+</head>
+<body>
+	<h1>Check Point GAiA Network Settings & Routes Generator</h1>
+	<p>
+		Need to upgrade / reinstall your Check Point device? This utility will generate the network settings & route addition commands (for GAiA OS) from your current configuration.
+		<br /><br />
+		<strong>How to use it?</strong>
+		<br />
+		<ul>
+			<li><strong>Network Settings:</strong> Paste the output of the 'ifconfig' command from your current device and click the 'Generate Network Settings' button.</li>
+			<li><strong>Network Routes:</strong> Paste the output of the 'route -n' command from your current device and click the 'Generate Routes' button.</li>
+		</ul>
+		<br />
+	</p>
+	<table class="tbl-split">
+		<tr>
+			<td><textarea id="txt-content" onfocus="contentFocus();" onfocusout="contentFocusOut();">Paste your input here...</textarea></td>
+			<td><textarea id="txt-output">The output will apprear here after you click the button...</textarea></td>
+		</tr>
+	</table>
+	<br />
+	<div class='centered'>
+		<button onclick='generateNetworkSettings()'>Generate Network Settings</button>
+		<button onclick='generateRoutes()'>Generate Routes</button>
+		
+		<br /><br />
+		<span><strong>DISCLAIMER:</strong> You may use this utility at your own risk & responsibility. The author is not responsible to any possible damages that may occur after using the utility.</span>
+		<br />
+		<span>© <a href="mailto:bmelad@gmail.com">Elad Ben-Matityahu</a></span>
+	</div>
+</body>
+</html>
